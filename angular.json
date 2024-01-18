@@ -20,7 +20,7 @@
             "outputPath": "dist/words-memorizer",
             "index": "src/index.html",
             "browser": "src/main.ts",
-            "baseHref": "/words-memorizer",
+            "baseHref": "/words-memorizer/",
             "outputHashing": "all",
             "polyfills": [
               "zone.js"
