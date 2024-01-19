@@ -90,7 +90,7 @@ export class AnswerModalComponent {
   private result = false;
 
   submit() {
-    if (this.form.value.answer?.toLowerCase() === this.dialogData.toLowerCase()) {
+    if (this.form.value.answer?.toLowerCase().trim() === this.dialogData.toLowerCase().trim()) {
       this.result = true;
       this.state.update(() => 'correct');
     } else {
