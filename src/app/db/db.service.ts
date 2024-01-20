@@ -7,8 +7,8 @@ export class DbService extends Dexie {
   words!: Dexie.Table<Word, number>;
   constructor() {
     super('word-db');
-    this.version(3).stores({
-      words: '++id,word,translation,streak,wrongAnswers'
+    this.version(4).stores({
+      words: '++id,word,translation,streak,wrongAnswers,lastAnswered,reverseStreak'
     });
   }
 }

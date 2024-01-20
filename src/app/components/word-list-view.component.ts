@@ -45,15 +45,30 @@ import {MatIconModule} from "@angular/material/icon";
         <button
           class="flex-grow flex-1 mx-3"
           mat-raised-button color="primary"
+          [disabled]="selected().length===0"
+          (click)="resetSelected()">
+          Reset selected
+        </button>
+        <button
+          class="flex-grow flex-1 mx-3"
+          mat-raised-button color="accent"
           (click)="deleteSelected()"
           [disabled]="selected().length===0">
           Delete selected
         </button>
+      </div>
+      <div class="flex mt-3">
         <button
           class="flex-grow flex-1 mx-3"
           mat-raised-button color="warn"
-          (click)="reset()">
-          Reset
+          (click)="deleteAll()">
+          Delete all
+        </button>
+        <button
+          class="flex-grow flex-1 mx-3"
+          mat-raised-button color="warn"
+          (click)="resetAll()">
+          Reset all
         </button>
       </div>
     </div>
@@ -104,9 +119,23 @@ export class WordListViewComponent implements OnInit {
     if (word.streak > word.wrongAnswers) return 'accent';
     else return 'warn';
   }
-  reset() {
-    const result = confirm('Are you sure you want to delete all words?');
-    if (result) this.db.words.clear();
+
+  resetAll() {
+    const result = confirm('Are you sure you want to reset all words?');
+    if (result) {
+      this.db.words.toArray().then(words => {
+        this.db.words.bulkPut(
+          words.map(word => ({
+            ...word,
+            streak: 0,
+            reverseStreak: 0,
+            wrongAnswers: 0,
+            lastAnswered: new Date()
+          })) as Word[]
+        );
+        this.retrievePage();
+      });
+    }
   }
 
   toggleSelection(word: Word, $event: MatChipSelectionChange) {
@@ -123,6 +152,34 @@ export class WordListViewComponent implements OnInit {
       this.db.words.bulkDelete(this.selected());
       this.words.update(words => words.filter(word => !this.selected().includes(word.id)));
       this.selected.update(() => []);
+      this.retrievePage();
+    }
+  }
+
+  deleteAll() {
+    const result = confirm('Are you sure you want to delete all words?');
+    if (result) {
+      this.db.words.clear();
+      this.retrievePage();
+    }
+  }
+
+  async resetSelected() {
+    const result = confirm('Are you sure you want to reset the selected words?');
+    if (result) {
+      const selected = await this.db.words.bulkGet(this.selected());
+      this.db.words.bulkPut(
+        selected
+          .filter(word => word !== undefined)
+          .map(word => ({
+            ...word,
+            streak: 0,
+            reverseStreak: 0,
+            wrongAnswers: 0,
+            lastAnswered: new Date()
+          })) as Word[]
+      );
+      this.retrievePage();
     }
   }
 }

@@ -64,6 +64,7 @@ export class AddModalComponent {
         word: this.form.controls.word.value,
         translation: this.form.controls.translation.value,
         streak: 0,
+        reverseStreak: 0,
         wrongAnswers: 0,
         lastAnswered: new Date()
       } as Word)

@@ -1,6 +1,6 @@
 import {Component, inject, OnInit} from '@angular/core';
-import { CommonModule } from '@angular/common';
-import {ActivatedRoute, Router, RouterOutlet} from '@angular/router';
+import {CommonModule} from '@angular/common';
+import {Router, RouterOutlet} from '@angular/router';
 import {MatToolbarModule} from "@angular/material/toolbar";
 import {MatIconModule} from "@angular/material/icon";
 import {MatButtonModule} from "@angular/material/button";
@@ -20,20 +20,38 @@ import {AnswerComponent} from "./components/answer/answer.component";
         </button>
         <span>Words memorizer</span>
         <span class="flex-grow flex-1"></span>
-        <app-add-word/>
+        <app-add-word class="ml-3"/>
+        <button
+          mat-raised-button
+          color="primary" class="ml-3" (click)="toggleHistory()">
+          @if (router.url === '/history') {
+            <mat-icon>arrow_back</mat-icon>
+          } @else {
+            <mat-icon>view_list</mat-icon>
+          }
+        </button>
       </mat-toolbar>
     </div>
     <main>
       <router-outlet></router-outlet>
     </main>
   `,
-  styles:[]
+  styles: []
 })
 export class AppComponent {
   router = inject(Router);
+
   toggleSidenav() {
     if (this.router.url !== '/words') {
       this.router.navigate(['/words'])
+    } else {
+      this.router.navigate(['/'])
+    }
+  }
+
+  toggleHistory() {
+    if (this.router.url !== '/history') {
+      this.router.navigate(['/history'])
     } else {
       this.router.navigate(['/'])
     }
