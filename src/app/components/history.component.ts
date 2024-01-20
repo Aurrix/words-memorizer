@@ -43,8 +43,14 @@ import {MatChipsModule} from "@angular/material/chips";
                   }
                 </mat-panel-description>
               </mat-expansion-panel-header>
-              <mat-chip class="w-full">
-                Correct: {{ word.streak }} <=> {{ word.reverseStreak }} | Wrong: {{ word.wrongAnswers }} | Last
+              <mat-chip class="w-full mt-3" [color]="'primary'" [highlighted]="true">
+                Correct: {{ word.streak }} <=> {{ word.reverseStreak }}
+              </mat-chip>
+              <mat-chip class="w-full mt-3" [color]="'warn'" [highlighted]="true">
+                Wrong: {{ word.wrongAnswers }}
+              </mat-chip>
+              <mat-chip class="w-full mt-3" [color]="'accent'" [highlighted]="true">
+                Last
                 answered: {{ word.lastAnswered | date }}
               </mat-chip>
             </mat-expansion-panel>

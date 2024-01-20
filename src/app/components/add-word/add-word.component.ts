@@ -12,7 +12,7 @@ import {AddModalComponent} from "./add-modal.component";
     MatIconModule
   ],
   template: `
-    <button mat-raised-button color="primary" (click)="openDialog()"><mat-icon>add</mat-icon></button>
+    <button mat-icon-button color="primary" (click)="openDialog()"><mat-icon>add</mat-icon></button>
   `,
   styles: ``
 })

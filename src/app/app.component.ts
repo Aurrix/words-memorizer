@@ -24,7 +24,7 @@ import {concat, filter, first, interval} from "rxjs";
         <span class="flex-grow flex-1"></span>
         <app-add-word class="ml-3"/>
         <button
-          mat-raised-button
+          mat-icon-button
           color="primary" class="mx-3" (click)="toggleHistory()">
           @if (router.url === '/history') {
             <mat-icon>arrow_back</mat-icon>
