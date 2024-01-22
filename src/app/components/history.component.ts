@@ -34,12 +34,12 @@ import {MatChipsModule} from "@angular/material/chips";
                 </mat-panel-title>
                 <mat-panel-description class="justify-between">
                   {{ word.translation }}
-                  @if (word.streak > 3) {
-                    <mat-icon [color]="'accent'">check</mat-icon>
-                  } @else if (word.streak === word.wrongAnswers) {
-                    <mat-icon [color]="'primary'">minimize</mat-icon>
-                  } @else {
+                  @if (word.streak > word.wrongAnswers) {
+                    <mat-icon class="text-green-500">arrow_drop_up</mat-icon>
+                  } @else if (word.streak < word.wrongAnswers) {
                     <mat-icon [color]="'warn'">arrow_drop_down</mat-icon>
+                  } @else {
+                    <mat-icon class="text-gray-400">unfold_less</mat-icon>
                   }
                 </mat-panel-description>
               </mat-expansion-panel-header>
@@ -67,7 +67,7 @@ export class HistoryComponent implements OnInit {
 
 
   ngOnInit(): void {
-    this.db.words.orderBy('lastAnswered')
+    this.db.words.orderBy('created')
       .reverse()
       .toArray().then(words => {
       this.history.set(this.splitByDay(words));

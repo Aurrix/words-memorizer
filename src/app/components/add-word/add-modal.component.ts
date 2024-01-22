@@ -66,7 +66,8 @@ export class AddModalComponent {
         streak: 0,
         reverseStreak: 0,
         wrongAnswers: 0,
-        lastAnswered: new Date()
+        lastAnswered: new Date(),
+        created: new Date()
       } as Word)
       this.dialogRef.close();
     }

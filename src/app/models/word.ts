@@ -6,4 +6,5 @@ export interface Word {
   reverseStreak: number;
   wrongAnswers: number;
   lastAnswered: Date;
+  created: Date;
 }
