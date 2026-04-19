@@ -1,21 +1,25 @@
-import {Routes} from "@angular/router";
-import {AppComponent} from "./app.component";
-import {AnswerComponent} from "./components/answer/answer.component";
-import {SearchAndOverviewComponent} from "./components/search-and-overview.component";
-import {HistoryComponent} from "./components/history.component";
+import { Routes } from "@angular/router";
 
 export const routes: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    component: AnswerComponent
+    loadComponent: () =>
+      import("./components/home.component").then((m) => m.HomeComponent)
   },
   {
-    path: 'words',
-    component: SearchAndOverviewComponent
+    path: 'cards',
+    loadComponent: () =>
+      import("./components/answer/answer.component").then((m) => m.AnswerComponent)
   },
   {
     path: 'history',
-    component: HistoryComponent
+    loadComponent: () =>
+      import("./components/history.component").then((m) => m.HistoryComponent)
+  },
+  {
+    path: 'settings',
+    loadComponent: () =>
+      import("./components/settings.component").then((m) => m.SettingsComponent)
   }
 ];

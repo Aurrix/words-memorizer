@@ -1,37 +1,55 @@
-import {ApplicationRef, Component, inject, OnInit} from '@angular/core';
-import {CommonModule} from '@angular/common';
-import {ActivatedRoute, Router, RouterOutlet} from '@angular/router';
-import {MatToolbarModule} from "@angular/material/toolbar";
-import {MatIconModule} from "@angular/material/icon";
-import {MatButtonModule} from "@angular/material/button";
-import {MatCardModule} from "@angular/material/card";
-import {AddWordComponent} from "./components/add-word/add-word.component";
-import {AnswerComponent} from "./components/answer/answer.component";
-import {SwUpdate, VersionReadyEvent} from "@angular/service-worker";
-import {concat, filter, first, interval} from "rxjs";
+import { ApplicationRef, Component, inject, OnInit } from '@angular/core';
+import { Router, RouterOutlet } from '@angular/router';
+import { MatButtonModule } from "@angular/material/button";
+import { MatIconModule } from "@angular/material/icon";
+import { MatMenuModule } from "@angular/material/menu";
+import { MatToolbarModule } from "@angular/material/toolbar";
+import { SwUpdate, VersionReadyEvent } from "@angular/service-worker";
+import { filter, first } from "rxjs";
+import { AddWordComponent } from "./components/add-word/add-word.component";
+import { LanguageSettingsService } from "./services/language-settings.service";
 
 @Component({
   selector: 'app-root',
-  standalone: true,
-  imports: [CommonModule, RouterOutlet, MatToolbarModule, MatIconModule, MatButtonModule, MatCardModule, AddWordComponent, AnswerComponent],
+  imports: [
+    RouterOutlet,
+    MatToolbarModule,
+    MatIconModule,
+    MatButtonModule,
+    MatMenuModule,
+    AddWordComponent
+  ],
   template: `
     <div class="flex flex-col">
       <mat-toolbar>
-        <button mat-icon-button (click)="toggleSidenav()">
-          <mat-icon>menu</mat-icon>
-        </button>
-        <span>Words memorizer</span>
-        <span class="flex-grow flex-1"></span>
-        <app-add-word class="ml-3"/>
-        <button
-          mat-icon-button
-          color="primary" class="mx-3" (click)="toggleHistory()">
-          @if (router.url === '/history') {
+        <button mat-icon-button color="primary" (click)="toggleSettings()">
+          @if (router.url === '/settings') {
             <mat-icon>arrow_back</mat-icon>
           } @else {
-            <mat-icon>view_list</mat-icon>
+            <mat-icon>settings</mat-icon>
           }
         </button>
+        <span class="ml-2 text-base sm:text-lg">Words memorizer</span>
+        <span class="flex-grow flex-1"></span>
+        <button
+          mat-button
+          class="min-w-0 px-2"
+          [disabled]="!settings.isReady()"
+          [matMenuTriggerFor]="pairMenu">
+          <span class="text-lg">
+            {{ settings.isReady() ? settings.activePairFlags() : '...' }}
+          </span>
+          <mat-icon>arrow_drop_down</mat-icon>
+        </button>
+        <mat-menu #pairMenu="matMenu">
+          @for (pair of settings.declaredPairs(); track pair.key) {
+            <button mat-menu-item (click)="selectPair(pair.key)">
+              <span class="mr-3 text-lg">{{ settings.getPairFlags(pair) }}</span>
+              <span>{{ settings.getPairLabel(pair) }}</span>
+            </button>
+          }
+        </mat-menu>
+        <app-add-word class="ml-1"/>
       </mat-toolbar>
     </div>
     <main>
@@ -41,39 +59,36 @@ import {concat, filter, first, interval} from "rxjs";
   styles: []
 })
 export class AppComponent implements OnInit {
-  router = inject(Router);
-  swu = inject(SwUpdate);
-  appRef = inject(ApplicationRef);
+  readonly router = inject(Router);
+  readonly swu = inject(SwUpdate);
+  readonly appRef = inject(ApplicationRef);
+  readonly settings = inject(LanguageSettingsService);
 
   ngOnInit() {
     if (this.swu.isEnabled) {
       this.appRef.isStable
-        .pipe(first(isStable => isStable))
+        .pipe(first((isStable) => isStable))
         .subscribe(async () => {
           await this.swu.checkForUpdate();
         });
       this.swu.versionUpdates
         .pipe(filter((evt): evt is VersionReadyEvent => evt.type === 'VERSION_READY'))
-        .subscribe(evt => {
+        .subscribe(() => {
           alert('New version available. Application will now reload.');
           document.location.reload();
         });
     }
   }
 
-  toggleSidenav() {
-    if (this.router.url !== '/words') {
-      this.router.navigate(['/words'])
+  toggleSettings() {
+    if (this.router.url !== '/settings') {
+      this.router.navigate(['/settings']);
     } else {
-      this.router.navigate(['/'])
+      this.router.navigate(['/']);
     }
   }
 
-  toggleHistory() {
-    if (this.router.url !== '/history') {
-      this.router.navigate(['/history'])
-    } else {
-      this.router.navigate(['/'])
-    }
+  selectPair(pairKey: string) {
+    void this.settings.setActivePair(pairKey);
   }
 }

@@ -1,5 +1,6 @@
-import {Component, inject, signal} from '@angular/core';
-import {MatButtonModule} from "@angular/material/button";
+import { Component, inject, signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from "@angular/forms";
+import { MatButtonModule } from "@angular/material/button";
 import {
   MAT_DIALOG_DATA,
   MatDialogActions,
@@ -7,14 +8,18 @@ import {
   MatDialogRef,
   MatDialogTitle
 } from "@angular/material/dialog";
-import {MatFormFieldModule} from "@angular/material/form-field";
-import {MatInputModule} from "@angular/material/input";
-import {FormControl, FormGroup, ReactiveFormsModule, Validators} from "@angular/forms";
-import {MatIconModule} from "@angular/material/icon";
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatIconModule } from "@angular/material/icon";
+import { MatInputModule } from "@angular/material/input";
+
+interface AnswerDialogData {
+  answer: string;
+  answerLanguage: string;
+  notes: string;
+}
 
 @Component({
   selector: 'app-answer-modal',
-  standalone: true,
   imports: [
     MatButtonModule,
     MatDialogActions,
@@ -35,11 +40,18 @@ import {MatIconModule} from "@angular/material/icon";
           </h1>
         </div>
       </div>
-      <div mat-dialog-content class="flex p-3">
-        Your answer: <strong>{{ dialogData }}</strong>
+      <div mat-dialog-content class="flex flex-col gap-3 p-3">
+        <div>
+          Your answer: <strong [attr.lang]="dialogData.answerLanguage">{{ dialogData.answer }}</strong>
+        </div>
+        @if (dialogData.notes) {
+          <div class="rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+            {{ dialogData.notes }}
+          </div>
+        }
       </div>
       <div mat-dialog-actions align="center">
-        <button mat-button (click)="finish()">Ok</button>
+        <button mat-button type="button" (click)="finish()">Ok</button>
       </div>
     }
     @if (state() === 'wrong') {
@@ -51,28 +63,39 @@ import {MatIconModule} from "@angular/material/icon";
           </h1>
         </div>
       </div>
-      <div mat-dialog-content class="flex p-3">
-        Correct answer: <strong>{{ dialogData }}</strong>
+      <div mat-dialog-content class="flex flex-col gap-3 p-3">
+        <div>
+          Correct answer:
+          <strong [attr.lang]="dialogData.answerLanguage">{{ dialogData.answer }}</strong>
+        </div>
+        @if (dialogData.notes) {
+          <div class="rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+            {{ dialogData.notes }}
+          </div>
+        }
       </div>
       <div mat-dialog-actions align="center">
-        <button mat-button (click)="finish()">Ok</button>
+        <button mat-button type="button" (click)="finish()">Ok</button>
       </div>
     }
     @if (state() === 'unanswered') {
-      <form
-        [formGroup]="form" class="flex flex-col justify-items-center">
+      <form [formGroup]="form" class="flex flex-col justify-items-center">
         <h1 mat-dialog-title class="m-auto text-center">Answer</h1>
         <div mat-dialog-content class="flex p-3">
           <mat-form-field class="w-full">
-            <mat-label>Whats is your answer?</mat-label>
-            <input matInput formControlName="answer" required>
+            <mat-label>What is your answer?</mat-label>
+            <input
+              matInput
+              formControlName="answer"
+              required
+              [attr.lang]="dialogData.answerLanguage">
             @if (form.controls.answer.hasError('required')) {
               <mat-error>This field cannot be empty</mat-error>
             }
           </mat-form-field>
         </div>
         <div mat-dialog-actions align="center">
-          <button mat-button (click)="submit()">Submit</button>
+          <button mat-button type="button" (click)="submit()">Submit</button>
         </div>
       </form>
     }
@@ -80,22 +103,22 @@ import {MatIconModule} from "@angular/material/icon";
   styles: ``
 })
 export class AnswerModalComponent {
-  form = new FormGroup({
+  readonly form = new FormGroup({
     answer: new FormControl('', Validators.required),
   });
-  state = signal<'correct' | 'wrong' | 'unanswered'>('unanswered');
-  dialogRef = inject(MatDialogRef);
-  dialogData: string = inject(MAT_DIALOG_DATA);
+  readonly state = signal<'correct' | 'wrong' | 'unanswered'>('unanswered');
+  readonly dialogRef = inject(MatDialogRef);
+  readonly dialogData = inject(MAT_DIALOG_DATA) as AnswerDialogData;
 
   private result = false;
 
   submit() {
-    if (this.form.value.answer?.toLowerCase().trim() === this.dialogData.toLowerCase().trim()) {
+    if (this.form.value.answer?.toLowerCase().trim() === this.dialogData.answer.toLowerCase().trim()) {
       this.result = true;
-      this.state.update(() => 'correct');
+      this.state.set('correct');
     } else {
       this.result = false;
-      this.state.update(() => 'wrong');
+      this.state.set('wrong');
     }
   }
 
