@@ -192,7 +192,7 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
   styles: `
     :host ::ng-deep .search-field .mat-mdc-form-field-infix {
       min-width: 0;
-      padding-inline-end: 4.75rem;
+      padding-inline-end: 1.75rem;
     }
 
     :host ::ng-deep .search-field .mat-mdc-form-field-icon-suffix {
@@ -204,7 +204,7 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
     }
 
     :host ::ng-deep .search-field .mdc-floating-label {
-      max-width: calc(100% - 4.75rem);
+      max-width: calc(100% - 1.75rem);
     }
 
     :host ::ng-deep .search-field input.mat-mdc-input-element {
