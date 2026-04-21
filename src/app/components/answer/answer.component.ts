@@ -67,6 +67,7 @@ export class AnswerComponent {
       }
     }).afterClosed().subscribe(async (result) => {
       if (result) {
+        word.correctAnswers++;
         this.isReverse() ? word.reverseStreak++ : word.streak++;
         word.lastAnswered = new Date();
         await this.db.words.put(word);
@@ -78,6 +79,7 @@ export class AnswerComponent {
         await this.db.words.put(word);
       }
 
+      this.settings.notifyWordDataChanged();
       await this.showNextItem(this.settings.activePair());
     });
   }

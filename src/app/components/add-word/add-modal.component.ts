@@ -4,8 +4,10 @@ import { FormsModule, FormControl, FormGroup, ReactiveFormsModule, Validators } 
 import { MatAutocompleteModule, MatAutocompleteSelectedEvent } from "@angular/material/autocomplete";
 import { MatButtonModule } from "@angular/material/button";
 import {
+  MAT_DIALOG_DATA,
   MatDialogActions,
   MatDialogContent,
+  MatDialog,
   MatDialogRef,
   MatDialogTitle
 } from "@angular/material/dialog";
@@ -13,11 +15,20 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatChipInputEvent, MatChipsModule } from "@angular/material/chips";
+import { firstValueFrom } from "rxjs";
 import { DbService } from "../../db/db.service";
 import { Word } from "../../models/word";
 import { LanguageSettingsService } from "../../services/language-settings.service";
 import { SpeechInputService } from "../../services/speech-input.service";
 import { normalizeTag } from "../../tags/tag-utils";
+import {
+  buildWordMergePreview,
+  createWordFromDraft,
+  findWordMergeMatches,
+  WordMergeDraft
+} from "../../words/word-utils";
+import { MergeDialogComponent } from "./merge-dialog.component";
+import { AddModalData } from "./word-dialog";
 
 @Component({
   selector: 'app-add-modal',
@@ -37,7 +48,7 @@ import { normalizeTag } from "../../tags/tag-utils";
   template: `
     <form [formGroup]="form" class="flex h-full flex-col">
       <h1 mat-dialog-title class="m-auto text-center">
-        Add {{ settings.activePairFlags() }}
+        {{ isEditMode ? 'Edit' : 'Add' }} {{ settings.activePairFlags() }}
       </h1>
       <div mat-dialog-content class="flex flex-1 flex-col gap-3 p-3">
         <mat-form-field class="w-full">
@@ -158,7 +169,7 @@ import { normalizeTag } from "../../tags/tag-utils";
         </mat-form-field>
       </div>
       <div mat-dialog-actions align="center">
-        <button mat-button type="button" (click)="addWord()">Add</button>
+        <button mat-button type="button" (click)="saveWord()">{{ isEditMode ? 'Save' : 'Add' }}</button>
         <button mat-button type="button" (click)="dialogRef.close()">Cancel</button>
       </div>
     </form>
@@ -167,10 +178,12 @@ import { normalizeTag } from "../../tags/tag-utils";
 })
 export class AddModalComponent implements OnDestroy {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
-  readonly dialogRef = inject(MatDialogRef);
+  readonly dialogRef = inject(MatDialogRef<AddModalComponent>);
+  readonly dialog = inject(MatDialog);
   readonly db = inject(DbService);
   readonly settings = inject(LanguageSettingsService);
   readonly speech = inject(SpeechInputService);
+  readonly dialogData = inject(MAT_DIALOG_DATA, { optional: true }) as AddModalData | null;
   readonly form = new FormGroup({
     word: new FormControl('', { validators: [Validators.required], nonNullable: true }),
     translation: new FormControl('', { validators: [Validators.required], nonNullable: true }),
@@ -179,8 +192,22 @@ export class AddModalComponent implements OnDestroy {
   readonly tagInput = new FormControl('', { nonNullable: true });
   readonly selectedTags = signal<string[]>([]);
   readonly savedTags = signal<string[]>([]);
+  readonly isEditMode = !!this.dialogData?.word;
+
+  private readonly currentWord = this.dialogData?.word ?? null;
 
   constructor() {
+    if (this.currentWord) {
+      this.form.setValue({
+        word: this.currentWord.word,
+        translation: this.currentWord.translation,
+        notes: this.currentWord.notes
+      });
+      this.selectedTags.set([...this.currentWord.tags].sort((leftTag, rightTag) =>
+        leftTag.localeCompare(rightTag)
+      ));
+    }
+
     void this.loadSavedTags();
   }
 
@@ -227,7 +254,7 @@ export class AddModalComponent implements OnDestroy {
     });
   }
 
-  async addWord() {
+  async saveWord() {
     Object.values(this.form.controls).forEach((control) => {
       control.markAsDirty();
     });
@@ -236,24 +263,41 @@ export class AddModalComponent implements OnDestroy {
       return;
     }
 
-    const activePair = this.settings.activePair();
-    const nextTags = this.selectedTags();
+    const draft = this.buildDraft();
 
-    await this.db.words.add({
-      sourceLanguage: activePair.sourceLanguage,
-      targetLanguage: activePair.targetLanguage,
-      word: this.form.controls.word.value.trim(),
-      translation: this.form.controls.translation.value.trim(),
-      notes: this.form.controls.notes.value.trim(),
-      tags: nextTags,
-      streak: 0,
-      reverseStreak: 0,
-      wrongAnswers: 0,
-      lastAnswered: new Date(),
-      created: new Date()
-    } as Word);
+    if (this.isEditMode && this.currentWord) {
+      await this.saveEditedWord(draft);
+      return;
+    }
 
-    this.savedTags.set(await this.db.mergeSavedTags(nextTags));
+    const existingWords = await this.db.getWordsForPair(this.settings.activePair());
+    const mergeMatches = findWordMergeMatches(existingWords, draft);
+
+    if (mergeMatches.length > 0) {
+      const mergePreview = buildWordMergePreview(mergeMatches, draft);
+      const shouldMerge = await firstValueFrom(
+        this.dialog.open(MergeDialogComponent, {
+          width: '560px',
+          maxWidth: '95vw',
+          data: {
+            draft,
+            preview: mergePreview
+          }
+        }).afterClosed()
+      );
+
+      if (!shouldMerge) {
+        return;
+      }
+
+      await this.mergeMatchedWords(mergePreview);
+      this.savedTags.set(await this.db.mergeSavedTags(mergePreview.mergedWord.tags));
+    } else {
+      const nextWord = createWordFromDraft(draft);
+      await this.db.words.add(nextWord as Word);
+      this.savedTags.set(await this.db.mergeSavedTags(nextWord.tags));
+    }
+
     this.settings.notifyWordDataChanged();
     this.dialogRef.close();
   }
@@ -283,5 +327,58 @@ export class AddModalComponent implements OnDestroy {
     }
 
     return `${currentValue.trimEnd()}${separator}${nextTranscript}`;
+  }
+
+  private buildDraft(): WordMergeDraft {
+    const activePair = this.currentWord ?? this.settings.activePair();
+
+    return {
+      sourceLanguage: activePair.sourceLanguage,
+      targetLanguage: activePair.targetLanguage,
+      word: this.form.controls.word.value.trim(),
+      translation: this.form.controls.translation.value.trim(),
+      notes: this.form.controls.notes.value.trim(),
+      tags: this.selectedTags()
+    };
+  }
+
+  private async saveEditedWord(draft: WordMergeDraft): Promise<void> {
+    if (!this.currentWord) {
+      return;
+    }
+
+    await this.db.words.put({
+      ...this.currentWord,
+      sourceLanguage: draft.sourceLanguage,
+      targetLanguage: draft.targetLanguage,
+      word: draft.word,
+      translation: draft.translation,
+      notes: draft.notes,
+      tags: draft.tags
+    });
+
+    this.savedTags.set(await this.db.mergeSavedTags(draft.tags));
+    this.settings.notifyWordDataChanged();
+    this.dialogRef.close();
+  }
+
+  private async mergeMatchedWords(preview: ReturnType<typeof buildWordMergePreview>): Promise<void> {
+    const primaryMatch = preview.matches[0];
+    if (!primaryMatch) {
+      return;
+    }
+
+    const redundantIds = preview.matches.slice(1).map((match) => match.word.id);
+
+    await this.db.transaction('rw', this.db.words, async () => {
+      await this.db.words.put({
+        id: primaryMatch.word.id,
+        ...preview.mergedWord
+      } as Word);
+
+      if (redundantIds.length > 0) {
+        await this.db.words.bulkDelete(redundantIds);
+      }
+    });
   }
 }

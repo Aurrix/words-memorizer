@@ -119,6 +119,20 @@ export class DbService extends Dexie {
           value: JSON.stringify(savedTags)
         });
       });
+
+    this.version(9)
+      .stores({
+        words: '++id,sourceLanguage,targetLanguage,[sourceLanguage+targetLanguage],word,translation,notes,*tags,streak,wrongAnswers,lastAnswered,created,reverseStreak,correctAnswers,mergeMatches',
+        settings: '&key'
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('words').toCollection().modify((word: StoredWord) => {
+          word.correctAnswers = typeof word.correctAnswers === 'number'
+            ? word.correctAnswers
+            : Math.max(0, Number(word.streak ?? 0) + Number(word.reverseStreak ?? 0));
+          word.mergeMatches = typeof word.mergeMatches === 'number' ? word.mergeMatches : 0;
+        });
+      });
   }
 
   async getWordsForPair(pair: DeclaredLanguagePair): Promise<Word[]> {
@@ -136,6 +150,8 @@ export class DbService extends Dexie {
         streak: 0,
         reverseStreak: 0,
         wrongAnswers: 0,
+        correctAnswers: 0,
+        mergeMatches: 0,
         lastAnswered: new Date()
       }))
     );

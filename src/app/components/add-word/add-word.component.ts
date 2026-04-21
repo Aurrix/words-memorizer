@@ -4,6 +4,7 @@ import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { AddModalComponent } from "./add-modal.component";
 import { LanguageSettingsService } from "../../services/language-settings.service";
+import { buildAddWordDialogConfig } from "./word-dialog";
 
 @Component({
   selector: 'app-add-word',
@@ -28,16 +29,6 @@ export class AddWordComponent {
   constructor(public dialog: MatDialog) {}
 
   openDialog(): void {
-    const isSmallScreen = typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 640px)').matches;
-
-    this.dialog.open(AddModalComponent, {
-      disableClose: true,
-      width: isSmallScreen ? '100vw' : '480px',
-      height: isSmallScreen ? '100vh' : undefined,
-      maxWidth: isSmallScreen ? '100vw' : '95vw',
-      maxHeight: isSmallScreen ? '100vh' : '95vh',
-      panelClass: isSmallScreen ? 'add-word-dialog-mobile' : undefined,
-    });
+    this.dialog.open(AddModalComponent, buildAddWordDialogConfig());
   }
 }

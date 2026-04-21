@@ -7,18 +7,28 @@ import { MatAutocompleteModule, MatAutocompleteSelectedEvent } from "@angular/ma
 import { MatButtonToggleModule } from "@angular/material/button-toggle";
 import { MatCardModule } from "@angular/material/card";
 import { MatChipInputEvent, MatChipsModule } from "@angular/material/chips";
+import { MatDialog } from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
+import { AddModalComponent } from "./add-word/add-modal.component";
 import { DbService } from "../db/db.service";
 import { Word } from "../models/word";
 import { LanguageSettingsService } from "../services/language-settings.service";
 import { SpeechInputService } from "../services/speech-input.service";
 import { normalizeTag, normalizeTags } from "../tags/tag-utils";
 import { HiddenSide, WordLearningRowComponent } from "./word-learning-row.component";
+import {
+  compareWordsByDate,
+  compareWordsByScore,
+  matchesWordScoreFilter,
+  WordScoreFilterMode,
+  WordSortMode
+} from "../words/word-utils";
+import { buildAddWordDialogConfig } from "./add-word/word-dialog";
 
 type LearningDirection = 'source-to-target' | 'target-to-source' | 'random';
-type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
+type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
 
 @Component({
   selector: 'app-home',
@@ -135,24 +145,88 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
             </mat-autocomplete>
           </mat-form-field>
 
-          <div class="flex flex-wrap gap-2 text-slate-500">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="compact-controls-row sm:col-span-2">
+              <div class="compact-control" aria-label="Review order">
+                <div class="compact-control-label">
+                  <mat-icon>sort</mat-icon>
+                  <span>Review order</span>
+                </div>
+                <mat-button-toggle-group
+                  class="compact-toggle-group"
+                  [value]="sortMode()"
+                  aria-label="Review order"
+                  (valueChange)="setSortMode($event)">
+                  <mat-button-toggle
+                    value="date"
+                    aria-label="Order by date"
+                    title="Order by date">
+                    <mat-icon>schedule</mat-icon>
+                  </mat-button-toggle>
+                  <mat-button-toggle
+                    value="score-by-date"
+                    aria-label="Order by score inside each date group"
+                    title="Order by score inside each date group">
+                    <mat-icon>view_agenda</mat-icon>
+                  </mat-button-toggle>
+                  <mat-button-toggle
+                    value="score"
+                    aria-label="Order by score"
+                    title="Order by score">
+                    <mat-icon>local_fire_department</mat-icon>
+                  </mat-button-toggle>
+                </mat-button-toggle-group>
+              </div>
+
+              <div class="compact-controls-divider" aria-hidden="true"></div>
+
+              <div class="compact-control" aria-label="Score filter">
+                <div class="compact-control-label">
+                  <mat-icon>filter_alt</mat-icon>
+                  <span>Score filter</span>
+                </div>
+                <mat-button-toggle-group
+                  class="compact-toggle-group"
+                  [value]="scoreFilter()"
+                  aria-label="Score filter"
+                  (valueChange)="setScoreFilter($event)">
+                  <mat-button-toggle
+                    value="default"
+                    aria-label="Default filter, score greater than or equal to zero"
+                    title="Default filter, score greater than or equal to zero">
+                    <mat-icon>adjust</mat-icon>
+                  </mat-button-toggle>
+                  <mat-button-toggle
+                    value="wrong"
+                    aria-label="Wrong filter, score greater than or equal to one"
+                    title="Wrong filter, score greater than or equal to one">
+                    <mat-icon>priority_high</mat-icon>
+                  </mat-button-toggle>
+                  <mat-button-toggle
+                    value="all"
+                    aria-label="Show all scores"
+                    title="Show all scores">
+                    <mat-icon>apps</mat-icon>
+                  </mat-button-toggle>
+                </mat-button-toggle-group>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3 flex flex-wrap gap-2 text-slate-500">
             <span
-              class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium"
+              class="summary-badge"
               title="Visible words">
               <mat-icon class="!h-4 !w-4 !text-base">visibility</mat-icon>
-              <span>{{ filteredWords().length }}</span>
+              <span>Shown</span>
+              <strong class="text-slate-700">{{ filteredWords().length }}</strong>
             </span>
             <span
-              class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium"
+              class="summary-badge"
               title="Total words">
               <mat-icon class="!h-4 !w-4 !text-base">inventory_2</mat-icon>
-              <span>{{ words().length }}</span>
-            </span>
-            <span
-              class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium"
-              [title]="settings.activePairLabel()">
-              <mat-icon class="!h-4 !w-4 !text-base">translate</mat-icon>
-              <span class="text-base leading-none">{{ settings.activePairFlags() }}</span>
+              <span>Total</span>
+              <strong class="text-slate-700">{{ words().length }}</strong>
             </span>
           </div>
         </mat-card-content>
@@ -161,15 +235,19 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
       @if (groupedWords().length === 0) {
         <mat-card>
           <mat-card-content class="py-10 text-center text-slate-500">
-            No words match the current search and tag filters.
+            No words match the current search, tag, and score filters.
           </mat-card-content>
         </mat-card>
       } @else {
         <div class="flex flex-col gap-4">
-          @for (group of groupedWords(); track group.dayKey) {
+          @for (group of groupedWords(); track group.key) {
             <section class="flex flex-col gap-2">
               <div class="px-1 text-center text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                {{ group.day | date: 'mediumDate' }}
+                @if (group.day) {
+                  {{ group.day | date: 'mediumDate' }}
+                } @else {
+                  {{ group.label }}
+                }
               </div>
               <div class="flex flex-col gap-2">
                 @for (word of group.words; track word.id) {
@@ -178,6 +256,7 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
                     [learningMode]="learningMode()"
                     [hiddenSide]="getHiddenSide(word)"
                     (markWord)="markWord($event)"
+                    (editWord)="openEditDialog($event)"
                     (resetWord)="resetWordStats($event)"
                     (deleteWord)="deleteWord($event)">
                   </app-word-learning-row>
@@ -235,11 +314,80 @@ type WordDayGroup = { dayKey: string; day: Date; words: Word[] };
       align-items: center;
       justify-content: center;
     }
+
+    .compact-controls-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: stretch;
+      gap: 0.875rem;
+    }
+
+    .compact-control {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.375rem;
+    }
+
+    .compact-control-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding-inline: 0.125rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgb(100 116 139);
+    }
+
+    .compact-controls-divider {
+      width: 1px;
+      background: rgb(226 232 240);
+      align-self: stretch;
+    }
+
+    .compact-toggle-group {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      min-width: 0;
+    }
+
+    :host ::ng-deep .compact-toggle-group .mat-button-toggle-button {
+      width: 100%;
+    }
+
+    :host ::ng-deep .compact-toggle-group .mat-button-toggle-label-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-inline: 0.5rem;
+      line-height: 2rem;
+    }
+
+    .summary-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-radius: 9999px;
+      background: rgb(241 245 249);
+      padding: 0.5rem 0.875rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    @media (max-width: 639px) {
+      :host ::ng-deep .compact-toggle-group .mat-button-toggle-label-content {
+        padding-inline: 0.375rem;
+        line-height: 1.875rem;
+      }
+    }
   `
 })
 export class HomeComponent {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly db = inject(DbService);
+  readonly dialog = inject(MatDialog);
   readonly settings = inject(LanguageSettingsService);
   readonly speech = inject(SpeechInputService);
   readonly words = signal<Word[]>([]);
@@ -247,6 +395,8 @@ export class HomeComponent {
   readonly selectedTagFilters = signal<string[]>([]);
   readonly learningMode = signal(false);
   readonly learningDirection = signal<LearningDirection>('source-to-target');
+  readonly sortMode = signal<WordSortMode>('date');
+  readonly scoreFilter = signal<WordScoreFilterMode>('default');
   readonly searchControl = new FormControl('', { nonNullable: true });
   readonly tagFilterInput = new FormControl('', { nonNullable: true });
   readonly searchText = toSignal(this.searchControl.valueChanges, { initialValue: this.searchControl.value });
@@ -254,6 +404,7 @@ export class HomeComponent {
   readonly filteredWords = computed(() => {
     const query = this.searchText().trim().toLowerCase();
     const activeTagFilters = this.selectedTagFilters();
+    const scoreFilter = this.scoreFilter();
 
     return this.words().filter((word) => {
       const matchesQuery = query === '' || [
@@ -263,11 +414,12 @@ export class HomeComponent {
         ...word.tags
       ].some((value) => value.toLowerCase().includes(query));
       const matchesTags = activeTagFilters.every((tag) => word.tags.includes(tag));
+      const matchesScore = matchesWordScoreFilter(word, scoreFilter);
 
-      return matchesQuery && matchesTags;
+      return matchesQuery && matchesTags && matchesScore;
     });
   });
-  readonly groupedWords = computed(() => this.groupWordsByDay(this.filteredWords()));
+  readonly groupedWords = computed(() => this.groupWords(this.filteredWords()));
 
   private readonly randomHiddenSides = new Map<number, HiddenSide>();
 
@@ -320,6 +472,22 @@ export class HomeComponent {
     }
   }
 
+  setSortMode(mode: WordSortMode): void {
+    if (!mode) {
+      return;
+    }
+
+    this.sortMode.set(mode);
+  }
+
+  setScoreFilter(filter: WordScoreFilterMode): void {
+    if (!filter) {
+      return;
+    }
+
+    this.scoreFilter.set(filter);
+  }
+
   addTagFilterFromInput(event: MatChipInputEvent): void {
     this.addTagFilter(normalizeTag(event.value ?? ''));
     this.tagFilterInput.setValue('');
@@ -354,6 +522,7 @@ export class HomeComponent {
     const word = { ...event.word };
 
     if (event.outcome === 'correct') {
+      word.correctAnswers++;
       if (event.hiddenSide === 'target') {
         word.streak++;
       } else {
@@ -376,9 +545,15 @@ export class HomeComponent {
       streak: 0,
       reverseStreak: 0,
       wrongAnswers: 0,
+      correctAnswers: 0,
+      mergeMatches: 0,
       lastAnswered: new Date()
     });
     this.settings.notifyWordDataChanged();
+  }
+
+  openEditDialog(word: Word): void {
+    this.dialog.open(AddModalComponent, buildAddWordDialogConfig({ word }));
   }
 
   async deleteWord(word: Word): Promise<void> {
@@ -397,10 +572,7 @@ export class HomeComponent {
       this.db.getSavedTags()
     ]);
 
-    const sortedWords = [...words].sort((leftWord, rightWord) =>
-      rightWord.lastAnswered.getTime() - leftWord.lastAnswered.getTime() ||
-      rightWord.created.getTime() - leftWord.created.getTime()
-    );
+    const sortedWords = [...words].sort(compareWordsByDate);
 
     this.words.set(sortedWords);
     this.savedTags.set(savedTags);
@@ -443,14 +615,36 @@ export class HomeComponent {
     }
   }
 
-  private groupWordsByDay(words: Word[]): WordDayGroup[] {
-    const grouped = new Map<string, WordDayGroup>();
+  private groupWords(words: Word[]): WordGroup[] {
+    if (this.sortMode() === 'score') {
+      const sortedWords = [...words].sort(compareWordsByScore);
+      return sortedWords.length > 0
+        ? [{
+          key: 'score',
+          label: 'Highest score first',
+          words: sortedWords
+        }]
+        : [];
+    }
+
+    return this.groupWordsByDay(
+      words,
+      this.sortMode() === 'score-by-date' ? compareWordsByScore : compareWordsByDate
+    );
+  }
+
+  private groupWordsByDay(
+    words: Word[],
+    compareWords: (leftWord: Word, rightWord: Word) => number
+  ): WordGroup[] {
+    const grouped = new Map<string, WordGroup>();
 
     for (const word of words) {
       const dayKey = word.lastAnswered.toDateString();
       if (!grouped.has(dayKey)) {
         grouped.set(dayKey, {
-          dayKey,
+          key: dayKey,
+          label: dayKey,
           day: new Date(dayKey),
           words: []
         });
@@ -459,9 +653,14 @@ export class HomeComponent {
       grouped.get(dayKey)!.words.push(word);
     }
 
-    return Array.from(grouped.values()).sort((leftGroup, rightGroup) =>
-      rightGroup.day.getTime() - leftGroup.day.getTime()
-    );
+    return Array.from(grouped.values())
+      .map((group) => ({
+        ...group,
+        words: [...group.words].sort(compareWords)
+      }))
+      .sort((leftGroup, rightGroup) =>
+        (rightGroup.day?.getTime() ?? 0) - (leftGroup.day?.getTime() ?? 0)
+      );
   }
 
   private mergeTranscript(currentValue: string, transcript: string, separator: string): string {

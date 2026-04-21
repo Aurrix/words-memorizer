@@ -9,6 +9,8 @@ export interface Word {
   streak: number;
   reverseStreak: number;
   wrongAnswers: number;
+  correctAnswers: number;
+  mergeMatches: number;
   lastAnswered: Date;
   created: Date;
 }

@@ -4,6 +4,16 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatMenuModule, MatMenuTrigger } from "@angular/material/menu";
 import { Word } from "../models/word";
 import { SpeechOutputService } from "../services/speech-output.service";
+import {
+  formatWordScore,
+  getWordCorrectAnswers,
+  getWordHeatPalette,
+  getWordLevelLabel,
+  getWordMergeMatches,
+  getWordScore,
+  getWordScoreLevel,
+  WORD_MERGE_SCORE_WEIGHT
+} from "../words/word-utils";
 
 export type HiddenSide = 'source' | 'target';
 
@@ -39,6 +49,10 @@ export type HiddenSide = 'source' | 'target';
           <mat-icon>restart_alt</mat-icon>
           <span>Reset stats</span>
         </button>
+        <button mat-menu-item type="button" (click)="editWord.emit(word)">
+          <mat-icon>edit</mat-icon>
+          <span>Edit word</span>
+        </button>
         <button mat-menu-item type="button" (click)="deleteWord.emit(word)">
           <mat-icon>delete</mat-icon>
           <span>Delete word</span>
@@ -46,16 +60,18 @@ export type HiddenSide = 'source' | 'target';
       </mat-menu>
 
       <div
-        class="relative z-10 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition-transform duration-150 select-none"
+        class="relative z-10 rounded-xl border px-3 py-2.5 shadow-sm transition-transform duration-150 select-none"
         [class.cursor-pointer]="learningMode"
         [style.touch-action]="learningMode ? 'pan-y' : 'auto'"
+        [style.background-color]="surfaceColor"
+        [style.border-color]="borderColor"
         [style.transform]="'translateX(' + dragOffset + 'px)'"
         (pointerdown)="onPointerDown($event)"
         (pointermove)="onPointerMove($event)"
         (pointerup)="onPointerUp($event)"
         (pointercancel)="onPointerCancel($event)"
         (contextmenu)="onContextMenu($event)">
-        <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:gap-2">
+        <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-1.5 sm:items-center sm:gap-2">
           <div class="rounded-lg bg-slate-50 px-2.5 py-1.5 sm:px-3 sm:py-2">
             @if (isHidden('source') && !isRevealed) {
               <div class="text-sm font-semibold tracking-[0.24em] text-slate-300 sm:text-base">
@@ -63,7 +79,7 @@ export type HiddenSide = 'source' | 'target';
               </div>
             } @else {
               <div class="flex items-center justify-between gap-2">
-                <div class="min-w-0 flex-1 truncate leading-tight text-sm font-semibold text-slate-900 sm:text-base" [attr.lang]="word.sourceLanguage">
+                <div class="word-text min-w-0 flex-1 leading-tight text-sm font-semibold text-slate-900 sm:text-base" [attr.lang]="word.sourceLanguage">
                   {{ word.word }}
                 </div>
                 @if (speech.supported()) {
@@ -94,7 +110,7 @@ export type HiddenSide = 'source' | 'target';
               </div>
             } @else {
               <div class="flex items-center justify-between gap-2">
-                <div class="min-w-0 flex-1 truncate leading-tight text-sm font-semibold text-slate-900 sm:text-base" [attr.lang]="word.targetLanguage">
+                <div class="word-text min-w-0 flex-1 leading-tight text-sm font-semibold text-slate-900 sm:text-base" [attr.lang]="word.targetLanguage">
                   {{ word.translation }}
                 </div>
                 @if (speech.supported()) {
@@ -115,18 +131,36 @@ export type HiddenSide = 'source' | 'target';
           </div>
         </div>
 
-        @if (word.tags.length > 0) {
-          <div class="mt-2 flex flex-wrap gap-1.5">
-            @for (tag of word.tags; track tag) {
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+        <div class="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+          <span
+            class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
+            [style.background-color]="badgeBackgroundColor"
+            [style.color]="badgeTextColor">
+            {{ levelLabel }}
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 font-medium text-slate-600">
+            <mat-icon class="!h-4 !w-4 !text-sm">local_fire_department</mat-icon>
+            {{ scoreLabel }}
+          </span>
+          @if (mergeMatches > 0) {
+            <span class="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 font-medium text-slate-600">
+              <mat-icon class="!h-4 !w-4 !text-sm">call_merge</mat-icon>
+              {{ mergeMatches }}x{{ mergeScoreWeight }}
+            </span>
+          }
+          @for (tag of word.tags; track tag) {
+            <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-500">
                 #{{ tag }}
-              </span>
-            }
-          </div>
-        }
+            </span>
+          }
+        </div>
 
         @if (showDetails) {
           <div class="mt-2 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+            <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
+              <mat-icon class="!h-4 !w-4 !text-sm">done_all</mat-icon>
+              {{ correctAnswers }}
+            </span>
             <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
               <mat-icon class="!h-4 !w-4 !text-sm">done</mat-icon>
               {{ word.streak }}
@@ -139,6 +173,12 @@ export type HiddenSide = 'source' | 'target';
               <mat-icon class="!h-4 !w-4 !text-sm">close</mat-icon>
               {{ word.wrongAnswers }}
             </span>
+            @if (mergeMatches > 0) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5">
+                <mat-icon class="!h-4 !w-4 !text-sm">call_merge</mat-icon>
+                {{ mergeMatches }}x{{ mergeScoreWeight }}
+              </span>
+            }
           </div>
 
           @if (word.notes) {
@@ -151,6 +191,15 @@ export type HiddenSide = 'source' | 'target';
     </div>
   `,
   styles: `
+    .word-text {
+      display: -webkit-box;
+      overflow: hidden;
+      white-space: normal;
+      word-break: break-word;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
     :host ::ng-deep .compact-speak-button.mat-mdc-icon-button {
       width: 1.25rem;
       height: 1.25rem;
@@ -168,6 +217,13 @@ export type HiddenSide = 'source' | 'target';
     }
 
     @media (min-width: 640px) {
+      .word-text {
+        display: block;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
       :host ::ng-deep .compact-speak-button.mat-mdc-icon-button {
         width: 1.375rem;
         height: 1.375rem;
@@ -189,14 +245,24 @@ export class WordLearningRowComponent {
   @Input() learningMode = false;
   @Input() hiddenSide: HiddenSide = 'target';
   @Output() markWord = new EventEmitter<{ word: Word; outcome: 'correct' | 'incorrect'; hiddenSide: HiddenSide }>();
+  @Output() editWord = new EventEmitter<Word>();
   @Output() resetWord = new EventEmitter<Word>();
   @Output() deleteWord = new EventEmitter<Word>();
   @ViewChild(MatMenuTrigger) actionsTrigger?: MatMenuTrigger;
 
   readonly speech = inject(SpeechOutputService);
+  correctAnswers = 0;
   dragOffset = 0;
+  badgeBackgroundColor = '#f8fafc';
+  badgeTextColor = '#475569';
+  borderColor = '#e2e8f0';
   isRevealed = false;
+  levelLabel = 'L0';
+  mergeScoreWeight = WORD_MERGE_SCORE_WEIGHT;
+  mergeMatches = 0;
+  scoreLabel = '0';
   showDetails = false;
+  surfaceColor = '#ffffff';
 
   private activePointerId: number | null = null;
   private longPressHandle: ReturnType<typeof setTimeout> | undefined;
@@ -210,6 +276,7 @@ export class WordLearningRowComponent {
     this.dragOffset = 0;
     this.isRevealed = !this.learningMode;
     this.showDetails = false;
+    this.refreshMetrics();
   }
 
   isHidden(side: HiddenSide): boolean {
@@ -355,5 +422,20 @@ export class WordLearningRowComponent {
     } catch {
       // Ignore release failures for non-captured pointers.
     }
+  }
+
+  private refreshMetrics(): void {
+    this.correctAnswers = getWordCorrectAnswers(this.word);
+    this.mergeMatches = getWordMergeMatches(this.word);
+
+    const scoreLevel = getWordScoreLevel(this.word);
+    const palette = getWordHeatPalette(scoreLevel);
+
+    this.levelLabel = getWordLevelLabel(scoreLevel);
+    this.scoreLabel = formatWordScore(getWordScore(this.word));
+    this.surfaceColor = palette.surface;
+    this.borderColor = palette.border;
+    this.badgeBackgroundColor = palette.badgeBackground;
+    this.badgeTextColor = palette.badgeText;
   }
 }
