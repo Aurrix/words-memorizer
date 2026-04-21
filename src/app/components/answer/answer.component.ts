@@ -4,6 +4,7 @@ import { MatDialog } from "@angular/material/dialog";
 import { DbService } from "../../db/db.service";
 import { Word } from "../../models/word";
 import { LanguageSettingsService } from "../../services/language-settings.service";
+import { applyWordOutcome } from "../../words/word-utils";
 import { AnswerModalComponent } from "./answer-modal.component";
 
 @Component({
@@ -66,18 +67,9 @@ export class AnswerComponent {
         notes: word.notes
       }
     }).afterClosed().subscribe(async (result) => {
-      if (result) {
-        word.correctAnswers++;
-        this.isReverse() ? word.reverseStreak++ : word.streak++;
-        word.lastAnswered = new Date();
-        await this.db.words.put(word);
-      } else {
-        word.streak = 0;
-        word.reverseStreak = 0;
-        word.wrongAnswers++;
-        word.lastAnswered = new Date();
-        await this.db.words.put(word);
-      }
+      await this.db.words.put(
+        applyWordOutcome(word, result ? 'correct' : 'incorrect', this.isReverse() ? 'source' : 'target')
+      );
 
       this.settings.notifyWordDataChanged();
       await this.showNextItem(this.settings.activePair());
@@ -86,7 +78,7 @@ export class AnswerComponent {
 
   async showNextItem(pair = this.settings.activePair()) {
     const word = (await this.db.getWordsForPair(pair))
-      .filter((currentWord) => currentWord.streak < 3)
+      .filter((currentWord) => currentWord.streak < 3 || currentWord.reverseStreak < 3)
       .sort((a, b) => a.lastAnswered.getTime() - b.lastAnswered.getTime())[0];
 
     if (!word) {

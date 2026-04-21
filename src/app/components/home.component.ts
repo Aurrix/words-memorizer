@@ -1,9 +1,10 @@
 import { DatePipe } from '@angular/common';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatAutocompleteModule, MatAutocompleteSelectedEvent } from "@angular/material/autocomplete";
+import { MatButtonModule } from "@angular/material/button";
 import { MatButtonToggleModule } from "@angular/material/button-toggle";
 import { MatCardModule } from "@angular/material/card";
 import { MatChipInputEvent, MatChipsModule } from "@angular/material/chips";
@@ -16,9 +17,12 @@ import { DbService } from "../db/db.service";
 import { Word } from "../models/word";
 import { LanguageSettingsService } from "../services/language-settings.service";
 import { SpeechInputService } from "../services/speech-input.service";
+import { SpeechOutputService } from "../services/speech-output.service";
 import { normalizeTag, normalizeTags } from "../tags/tag-utils";
+import { VoiceLearningDialogComponent } from "./voice-learning-dialog.component";
 import { HiddenSide, WordLearningRowComponent } from "./word-learning-row.component";
 import {
+  applyWordOutcome,
   compareWordsByDate,
   compareWordsByScore,
   matchesWordScoreFilter,
@@ -36,6 +40,7 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
     DatePipe,
     ReactiveFormsModule,
     MatAutocompleteModule,
+    MatButtonModule,
     MatButtonToggleModule,
     MatCardModule,
     MatChipsModule,
@@ -45,15 +50,15 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
     WordLearningRowComponent
   ],
   template: `
-    <div class="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <mat-card>
-        <mat-card-content class="flex flex-col gap-4 pt-4">
-          <div class="flex items-start gap-3">
+    <div class="home-screen mx-auto flex max-w-5xl flex-col gap-4 px-3 py-4 sm:px-4 sm:py-5">
+      <mat-card class="surface-panel">
+        <mat-card-content class="surface-panel-content flex flex-col gap-3.5">
+          <div class="toolbar-row flex items-start gap-2.5">
             <mat-form-field class="search-field min-w-0 flex-1">
               <mat-label>Search</mat-label>
               <input
                 matInput
-                class="text-right text-sm"
+                class="text-right text-[13px]"
                 [formControl]="searchControl"
                 [attr.lang]="settings.activeSourceLanguage()"
                 placeholder="Search">
@@ -107,7 +112,7 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
             </mat-button-toggle-group>
           </div>
 
-          <mat-form-field class="w-full">
+          <mat-form-field class="tag-filter-field w-full">
             <mat-label>Filter by tags</mat-label>
             <mat-chip-grid #tagFilterGrid aria-label="Selected tag filters">
               @for (tag of selectedTagFilters(); track tag) {
@@ -145,7 +150,7 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
             </mat-autocomplete>
           </mat-form-field>
 
-          <div class="grid gap-3 sm:grid-cols-2">
+          <div class="compact-controls-shell grid gap-3 sm:grid-cols-2">
             <div class="compact-controls-row sm:col-span-2">
               <div class="compact-control" aria-label="Review order">
                 <div class="compact-control-label">
@@ -192,14 +197,14 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
                   (valueChange)="setScoreFilter($event)">
                   <mat-button-toggle
                     value="default"
-                    aria-label="Default filter, score greater than or equal to zero"
-                    title="Default filter, score greater than or equal to zero">
+                    aria-label="Default filter, score less than or equal to zero"
+                    title="Default filter, score less than or equal to zero">
                     <mat-icon>adjust</mat-icon>
                   </mat-button-toggle>
                   <mat-button-toggle
                     value="wrong"
-                    aria-label="Wrong filter, score greater than or equal to one"
-                    title="Wrong filter, score greater than or equal to one">
+                    aria-label="Wrong filter, score less than or equal to minus one"
+                    title="Wrong filter, score less than or equal to minus one">
                     <mat-icon>priority_high</mat-icon>
                   </mat-button-toggle>
                   <mat-button-toggle
@@ -213,18 +218,32 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
             </div>
           </div>
 
-          <div class="mt-3 flex flex-wrap gap-2 text-slate-500">
+          @if (voiceSupported() && learningMode()) {
+            <div class="flex justify-end">
+              <button
+                mat-stroked-button
+                class="compact-action-button"
+                type="button"
+                [disabled]="orderedLearningWords().length === 0"
+                (click)="openVoiceLearningDialog()">
+                <mat-icon>record_voice_over</mat-icon>
+                <span>Voice learning</span>
+              </button>
+            </div>
+          }
+
+          <div class="summary-row mt-2.5 flex flex-wrap gap-2 text-slate-500">
             <span
               class="summary-badge"
               title="Visible words">
-              <mat-icon class="!h-4 !w-4 !text-base">visibility</mat-icon>
+              <mat-icon class="summary-badge-icon !h-4 !w-4 !text-base">visibility</mat-icon>
               <span>Shown</span>
               <strong class="text-slate-700">{{ filteredWords().length }}</strong>
             </span>
             <span
               class="summary-badge"
               title="Total words">
-              <mat-icon class="!h-4 !w-4 !text-base">inventory_2</mat-icon>
+              <mat-icon class="summary-badge-icon !h-4 !w-4 !text-base">inventory_2</mat-icon>
               <span>Total</span>
               <strong class="text-slate-700">{{ words().length }}</strong>
             </span>
@@ -233,23 +252,27 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
       </mat-card>
 
       @if (groupedWords().length === 0) {
-        <mat-card>
+        <mat-card class="surface-panel empty-state-panel">
           <mat-card-content class="py-10 text-center text-slate-500">
             No words match the current search, tag, and score filters.
           </mat-card-content>
         </mat-card>
       } @else {
-        <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4 sm:gap-5">
           @for (group of groupedWords(); track group.key) {
             <section class="flex flex-col gap-2">
-              <div class="px-1 text-center text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                @if (group.day) {
-                  {{ group.day | date: 'mediumDate' }}
-                } @else {
-                  {{ group.label }}
-                }
+              <div class="word-group-heading">
+                <span class="word-group-heading-line" aria-hidden="true"></span>
+                <div class="word-group-heading-label">
+                  @if (group.day) {
+                    {{ group.day | date: 'mediumDate' }}
+                  } @else {
+                    {{ group.label }}
+                  }
+                </div>
+                <span class="word-group-heading-line" aria-hidden="true"></span>
               </div>
-              <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-2.5">
                 @for (word of group.words; track word.id) {
                   <app-word-learning-row
                     [word]="word"
@@ -268,128 +291,15 @@ type WordGroup = { key: string; label: string; day?: Date; words: Word[] };
       }
     </div>
   `,
-  styles: `
-    :host ::ng-deep .search-field .mat-mdc-form-field-infix {
-      min-width: 0;
-      padding-inline-end: 1.75rem;
-    }
-
-    :host ::ng-deep .search-field .mat-mdc-form-field-icon-suffix {
-      display: flex;
-      flex-direction: row;
-      flex-wrap: nowrap;
-      align-items: center;
-      white-space: nowrap;
-    }
-
-    :host ::ng-deep .search-field .mdc-floating-label {
-      max-width: calc(100% - 1.75rem);
-    }
-
-    :host ::ng-deep .search-field input.mat-mdc-input-element {
-      padding-inline-end: 0;
-    }
-
-    @media (min-width: 640px) {
-      :host ::ng-deep .search-field .mat-mdc-form-field-infix {
-        padding-inline-end: 3.5rem;
-      }
-
-      :host ::ng-deep .search-field .mdc-floating-label {
-        max-width: calc(100% - 3.5rem);
-      }
-
-      :host ::ng-deep .search-field input.mat-mdc-input-element {
-        padding-inline-end: 0;
-      }
-    }
-
-    .learning-direction-group {
-      display: flex;
-      align-self: flex-start;
-    }
-
-    .learning-direction-group .mat-button-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .compact-controls-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-      align-items: stretch;
-      gap: 0.875rem;
-    }
-
-    .compact-control {
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.375rem;
-    }
-
-    .compact-control-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding-inline: 0.125rem;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: rgb(100 116 139);
-    }
-
-    .compact-controls-divider {
-      width: 1px;
-      background: rgb(226 232 240);
-      align-self: stretch;
-    }
-
-    .compact-toggle-group {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      min-width: 0;
-    }
-
-    :host ::ng-deep .compact-toggle-group .mat-button-toggle-button {
-      width: 100%;
-    }
-
-    :host ::ng-deep .compact-toggle-group .mat-button-toggle-label-content {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-inline: 0.5rem;
-      line-height: 2rem;
-    }
-
-    .summary-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      border-radius: 9999px;
-      background: rgb(241 245 249);
-      padding: 0.5rem 0.875rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-    }
-
-    @media (max-width: 639px) {
-      :host ::ng-deep .compact-toggle-group .mat-button-toggle-label-content {
-        padding-inline: 0.375rem;
-        line-height: 1.875rem;
-      }
-    }
-  `
+  styles: ``
 })
-export class HomeComponent {
+export class HomeComponent implements OnDestroy {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly db = inject(DbService);
   readonly dialog = inject(MatDialog);
   readonly settings = inject(LanguageSettingsService);
   readonly speech = inject(SpeechInputService);
+  readonly voiceOutput = inject(SpeechOutputService);
   readonly words = signal<Word[]>([]);
   readonly savedTags = signal<string[]>([]);
   readonly selectedTagFilters = signal<string[]>([]);
@@ -401,6 +311,8 @@ export class HomeComponent {
   readonly tagFilterInput = new FormControl('', { nonNullable: true });
   readonly searchText = toSignal(this.searchControl.valueChanges, { initialValue: this.searchControl.value });
   readonly tagFilterQuery = toSignal(this.tagFilterInput.valueChanges, { initialValue: this.tagFilterInput.value });
+  readonly voiceSupported = computed(() => this.speech.supported() && this.voiceOutput.supported());
+  readonly orderedLearningWords = computed(() => this.groupedWords().flatMap((group) => group.words));
   readonly filteredWords = computed(() => {
     const query = this.searchText().trim().toLowerCase();
     const activeTagFilters = this.selectedTagFilters();
@@ -432,6 +344,12 @@ export class HomeComponent {
       this.settings.wordDataVersion();
       void this.loadWords();
     });
+  }
+
+  ngOnDestroy(): void {
+    if ((this.speech.activeField() ?? '').startsWith('home-')) {
+      this.speech.stop();
+    }
   }
 
   filteredTagSuggestions(): string[] {
@@ -519,23 +437,7 @@ export class HomeComponent {
   }
 
   async markWord(event: { word: Word; outcome: 'correct' | 'incorrect'; hiddenSide: HiddenSide }): Promise<void> {
-    const word = { ...event.word };
-
-    if (event.outcome === 'correct') {
-      word.correctAnswers++;
-      if (event.hiddenSide === 'target') {
-        word.streak++;
-      } else {
-        word.reverseStreak++;
-      }
-    } else {
-      word.streak = 0;
-      word.reverseStreak = 0;
-      word.wrongAnswers++;
-    }
-
-    word.lastAnswered = new Date();
-    await this.db.words.put(word);
+    await this.db.words.put(applyWordOutcome(event.word, event.outcome, event.hiddenSide));
     this.settings.notifyWordDataChanged();
   }
 
@@ -621,7 +523,7 @@ export class HomeComponent {
       return sortedWords.length > 0
         ? [{
           key: 'score',
-          label: 'Highest score first',
+          label: 'Needs work first',
           words: sortedWords
         }]
         : [];
@@ -674,5 +576,33 @@ export class HomeComponent {
     }
 
     return `${currentValue.trimEnd()}${separator}${nextTranscript}`;
+  }
+
+  openVoiceLearningDialog(): void {
+    if (!this.learningMode() || !this.voiceSupported()) {
+      return;
+    }
+
+    const queue = this.orderedLearningWords().map((word) => ({
+      word,
+      hiddenSide: this.getHiddenSide(word)
+    }));
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    const isSmallScreen = typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 640px)').matches;
+
+    this.dialog.open(VoiceLearningDialogComponent, {
+      data: { queue },
+      disableClose: false,
+      width: isSmallScreen ? '100vw' : '560px',
+      height: isSmallScreen ? '100vh' : undefined,
+      maxWidth: isSmallScreen ? '100vw' : '95vw',
+      maxHeight: isSmallScreen ? '100vh' : '95vh',
+      panelClass: isSmallScreen ? 'voice-learning-dialog-mobile' : undefined
+    });
   }
 }

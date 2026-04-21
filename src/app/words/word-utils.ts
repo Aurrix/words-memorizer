@@ -4,6 +4,7 @@ import { normalizeTags } from "../tags/tag-utils";
 export type WordSortMode = 'date' | 'score-by-date' | 'score';
 export type WordScoreFilterMode = 'default' | 'wrong' | 'all';
 export type WordMergeMatchField = 'word' | 'translation';
+export type WordOutcome = 'correct' | 'incorrect';
 
 export interface WordMergeDraft {
   sourceLanguage: string;
@@ -64,6 +65,40 @@ export function normalizeWordMatchValue(value: string): string {
   return value.trim().replace(/\s+/g, '').toLocaleLowerCase();
 }
 
+export function applyWordOutcome(
+  word: Word,
+  outcome: WordOutcome,
+  hiddenSide: 'source' | 'target',
+  answeredAt = new Date()
+): Word {
+  const nextWord = {
+    ...word,
+    lastAnswered: new Date(answeredAt)
+  };
+
+  if (outcome === 'correct') {
+    nextWord.correctAnswers++;
+
+    if (hiddenSide === 'target') {
+      nextWord.streak++;
+    } else {
+      nextWord.reverseStreak++;
+    }
+
+    return nextWord;
+  }
+
+  nextWord.wrongAnswers++;
+
+  if (hiddenSide === 'target') {
+    nextWord.streak = 0;
+  } else {
+    nextWord.reverseStreak = 0;
+  }
+
+  return nextWord;
+}
+
 export function getWordCorrectAnswers(
   word: Pick<Word, 'correctAnswers' | 'streak' | 'reverseStreak'>
 ): number {
@@ -76,11 +111,17 @@ export function getWordMergeMatches(word: Pick<Word, 'mergeMatches'>): number {
   return typeof word.mergeMatches === 'number' ? word.mergeMatches : 0;
 }
 
-export function getWordScore(
+export function getWordDifficultyScore(
   word: Pick<Word, 'wrongAnswers' | 'correctAnswers' | 'mergeMatches' | 'streak' | 'reverseStreak'>
 ): number {
   return word.wrongAnswers - getWordCorrectAnswers(word) +
     (getWordMergeMatches(word) * WORD_MERGE_SCORE_WEIGHT);
+}
+
+export function getWordScore(
+  word: Pick<Word, 'wrongAnswers' | 'correctAnswers' | 'mergeMatches' | 'streak' | 'reverseStreak'>
+): number {
+  return -getWordDifficultyScore(word);
 }
 
 export function formatWordScore(score: number): string {
@@ -90,7 +131,7 @@ export function formatWordScore(score: number): string {
 export function getWordScoreLevel(
   word: Pick<Word, 'wrongAnswers' | 'correctAnswers' | 'mergeMatches' | 'streak' | 'reverseStreak'>
 ): number {
-  return clamp(getWordScore(word) + 4, 0, WORD_HEAT_PALETTE.length - 1);
+  return clamp(4 - getWordScore(word), 0, WORD_HEAT_PALETTE.length - 1);
 }
 
 export function getWordLevelLabel(level: number): string {
@@ -109,9 +150,9 @@ export function matchesWordScoreFilter(
 
   switch (filter) {
     case 'default':
-      return score >= 0;
+      return score <= 0;
     case 'wrong':
-      return score >= 1;
+      return score <= -1;
     case 'all':
     default:
       return true;
@@ -126,7 +167,7 @@ export function compareWordsByDate(leftWord: Word, rightWord: Word): number {
 }
 
 export function compareWordsByScore(leftWord: Word, rightWord: Word): number {
-  return getWordScore(rightWord) - getWordScore(leftWord) ||
+  return getWordScore(leftWord) - getWordScore(rightWord) ||
     compareWordsByDate(leftWord, rightWord);
 }
 

@@ -104,7 +104,7 @@ interface MergeDialogData {
         }
 
         <div class="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
-          Duplicate-match score will increase by
+          Duplicate-match score penalty is
           {{ preview.matches.length * mergeScoreWeight }}
           ({{ preview.matches.length }} match{{ preview.matches.length === 1 ? '' : 'es' }} x {{ mergeScoreWeight }}).
         </div>

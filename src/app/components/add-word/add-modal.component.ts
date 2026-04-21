@@ -46,11 +46,11 @@ import { AddModalData } from "./word-dialog";
     MatDialogActions
   ],
   template: `
-    <form [formGroup]="form" class="flex h-full flex-col">
-      <h1 mat-dialog-title class="m-auto text-center">
+    <form [formGroup]="form" class="dialog-shell flex h-full flex-col">
+      <h1 mat-dialog-title class="dialog-title m-auto text-center">
         {{ isEditMode ? 'Edit' : 'Add' }} {{ settings.activePairFlags() }}
       </h1>
-      <div mat-dialog-content class="flex flex-1 flex-col gap-3 p-3">
+      <div mat-dialog-content class="dialog-content-stack flex flex-1 flex-col gap-3">
         <mat-form-field class="w-full">
           <mat-label>
             {{ settings.getLanguageFlag(settings.activeSourceLanguage()) }}
@@ -168,13 +168,45 @@ import { AddModalData } from "./word-dialog";
           </mat-autocomplete>
         </mat-form-field>
       </div>
-      <div mat-dialog-actions align="center">
+      <div mat-dialog-actions align="center" class="dialog-actions-row">
         <button mat-button type="button" (click)="saveWord()">{{ isEditMode ? 'Save' : 'Add' }}</button>
         <button mat-button type="button" (click)="dialogRef.close()">Cancel</button>
       </div>
     </form>
   `,
-  styles: ``
+  styles: `
+    :host {
+      display: block;
+    }
+
+    .dialog-title {
+      letter-spacing: -0.01em;
+      font-weight: 700;
+    }
+
+    .dialog-content-stack {
+      padding: 0.5rem 0.25rem 0.25rem;
+    }
+
+    :host ::ng-deep .mat-mdc-form-field .mat-mdc-text-field-wrapper {
+      border-radius: 1rem;
+    }
+
+    :host ::ng-deep .mat-mdc-form-field-icon-suffix .mat-icon {
+      width: 1rem;
+      height: 1rem;
+      font-size: 1rem;
+      line-height: 1rem;
+    }
+
+    :host ::ng-deep .mat-mdc-standard-chip {
+      --mdc-chip-container-height: 1.625rem;
+    }
+
+    .dialog-actions-row {
+      padding: 0.5rem 1rem 1rem;
+    }
+  `
 })
 export class AddModalComponent implements OnDestroy {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;

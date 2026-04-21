@@ -2,9 +2,11 @@ import { Injectable, signal } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class SpeechOutputService {
+  readonly isSpeaking = signal(false);
   readonly supported = signal(false);
 
   private readonly synthesis = this.resolveSynthesis();
+  private utteranceResolver: (() => void) | null = null;
 
   constructor() {
     this.supported.set(this.synthesis !== null);
@@ -18,21 +20,59 @@ export class SpeechOutputService {
       return;
     }
 
-    synthesis.cancel();
+    void this.speakOnce(normalizedText, lang);
+  }
 
-    const utterance = new SpeechSynthesisUtterance(normalizedText);
-    utterance.lang = lang || 'en';
+  speakOnce(text: string, lang: string): Promise<void> {
+    const synthesis = this.synthesis;
+    const normalizedText = text.trim();
 
-    const voice = this.findVoice(utterance.lang);
-    if (voice) {
-      utterance.voice = voice;
+    if (!synthesis || !normalizedText) {
+      return Promise.resolve();
     }
 
-    synthesis.speak(utterance);
+    this.stop();
+
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(normalizedText);
+      utterance.lang = lang || 'en';
+
+      const voice = this.findVoice(utterance.lang);
+      if (voice) {
+        utterance.voice = voice;
+      }
+
+      utterance.onend = () => {
+        if (this.utteranceResolver !== resolve) {
+          return;
+        }
+
+        this.isSpeaking.set(false);
+        this.utteranceResolver = null;
+        resolve();
+      };
+      utterance.onerror = () => {
+        if (this.utteranceResolver !== resolve) {
+          return;
+        }
+
+        this.isSpeaking.set(false);
+        this.utteranceResolver = null;
+        resolve();
+      };
+
+      this.isSpeaking.set(true);
+      this.utteranceResolver = resolve;
+      synthesis.speak(utterance);
+    });
   }
 
   stop(): void {
+    const resolver = this.utteranceResolver;
+    this.utteranceResolver = null;
+    this.isSpeaking.set(false);
     this.synthesis?.cancel();
+    resolver?.();
   }
 
   private resolveSynthesis(): SpeechSynthesis | null {
